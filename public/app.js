@@ -25,6 +25,7 @@ let lastSeenEventId = null;
 let lastPendingId   = null;
 let prevCurrentWord = null;
 let lastTimerSecond = -1;
+let assistantEnabled = false;
 
 // ── Audio ─────────────────────────────────────────────────────────────────────
 const LS_SOUND = 'wr_sound';
@@ -558,7 +559,7 @@ function showScreen(name) {
 function renderHostLobby(state) {
   document.getElementById('host-room-code').textContent   = state.code;
   document.getElementById('host-lobby-count').textContent = state.players.length;
-  renderPlayerList('host-lobby-players', state.players, null, null, { canKick: true });
+  renderPlayerList('host-lobby-players', state.players, null, null, { canKick: true, canGrantAssistant: true, assistantPlayerId: state.assistantPlayerId });
 
   const startBtn = document.getElementById('btn-start-game');
   startBtn.textContent = (state.lastWinner ? '🔄 ' : '▶ ') + 'بدء اللعبة';
@@ -577,7 +578,7 @@ function renderHostLobby(state) {
 function renderPlayerLobby(state) {
   document.getElementById('player-lobby-code').textContent  = state.code;
   document.getElementById('player-lobby-count').textContent = state.players.length;
-  renderPlayerList('player-lobby-players', state.players, null, myPlayerId);
+  renderPlayerList('player-lobby-players', state.players, null, myPlayerId, { assistantPlayerId: state.assistantPlayerId });
 }
 
 function renderPlayerGame(state) {
@@ -613,7 +614,16 @@ function renderPlayerGame(state) {
 
   document.getElementById('pending-notice').classList.toggle('hidden', !(isPending && isMeTurn));
 
-  renderPlayerList('player-game-players', state.players, game.currentTurnPlayerId, myPlayerId);
+  const hasAssistant = state.assistantPlayerId === myPlayerId;
+  document.getElementById('assistant-area').classList.toggle('hidden', !hasAssistant);
+  if (hasAssistant) {
+    const toggleBtn = document.getElementById('btn-assistant-toggle');
+    const toggleText = document.getElementById('assistant-toggle-text');
+    toggleBtn.classList.toggle('active', assistantEnabled);
+    toggleText.textContent = assistantEnabled ? 'المساعد مفعّل' : 'تفعيل المساعد';
+  }
+
+  renderPlayerList('player-game-players', state.players, game.currentTurnPlayerId, myPlayerId, { assistantPlayerId: state.assistantPlayerId });
   renderWordsList('player-used-words', 'player-words-count', game.usedWords, game.requiredLetter);
 }
 
@@ -673,7 +683,7 @@ function renderHostGame(state) {
 
   document.getElementById('host-new-game-panel').classList.add('hidden');
 
-  renderPlayerList('host-game-players', state.players, game.currentTurnPlayerId, null, { canKick: true });
+  renderPlayerList('host-game-players', state.players, game.currentTurnPlayerId, null, { canKick: true, canGrantAssistant: true, assistantPlayerId: state.assistantPlayerId });
   renderWordsList('host-used-words', 'host-words-count', game.usedWords, game.requiredLetter);
   renderEvents(game.events);
 }
@@ -683,7 +693,7 @@ function renderEliminated(state) {
   document.getElementById('elim-reason').textContent         = myElimReason || '';
   document.getElementById('elim-current-word').textContent   = game?.currentWord || '—';
   document.getElementById('elim-required-letter').textContent = game?.requiredLetter || '—';
-  renderPlayerList('elim-players', state.players.filter(p => p.alive), game?.currentTurnPlayerId, null);
+  renderPlayerList('elim-players', state.players.filter(p => p.alive), game?.currentTurnPlayerId, null, { assistantPlayerId: state.assistantPlayerId });
   renderWordsList('elim-used-words', 'elim-words-count', game?.usedWords || [], game?.requiredLetter);
 }
 
@@ -765,16 +775,24 @@ function renderPlayerList(listId, players, currentTurnId, selfId, opts = {}) {
     if (p.id === currentTurnId) tags.push({ text: 'دوره الآن', cls: 'tag-turn' });
     if (!p.connected && !p.eliminated) tags.push({ text: 'منقطع', cls: 'tag-dc' });
     if (p.eliminated)           tags.push({ text: p.eliminationReason || 'خرج', cls: 'tag-elim' });
+    if (p.id === opts.assistantPlayerId) tags.push({ text: 'مساعد', cls: 'tag-assistant' });
 
     const kickable = opts.canKick && !p.eliminated;
     const kickBtn  = kickable
       ? `<button class="btn-kick" data-pid="${p.id}" aria-label="طرد">✕</button>`
       : '';
 
+    const assistGrantable = opts.canGrantAssistant && !p.eliminated;
+    const isAssistant = p.id === opts.assistantPlayerId;
+    const assistBtn = assistGrantable
+      ? `<button class="btn-assistant-grant ${isAssistant ? 'active' : ''}" data-pid="${p.id}" aria-label="${isAssistant ? 'إلغاء المساعد' : 'إعطاء المساعد'}">🤖</button>`
+      : '';
+
     li.innerHTML = `
       <div class="player-avatar ${avatarClass}">${p.name.charAt(0)}</div>
       <span class="player-name">${escHtml(p.name)}</span>
       ${tags.map(t => `<span class="player-tag ${t.cls}">${t.text}</span>`).join('')}
+      ${assistBtn}
       ${kickBtn}
     `;
     ul.appendChild(li);
@@ -787,6 +805,17 @@ function renderPlayerList(listId, players, currentTurnId, selfId, opts = {}) {
         const pid = btn.getAttribute('data-pid');
         const player = players.find(x => x.id === pid);
         if (player) openKickModal(player);
+      });
+    });
+  }
+
+  if (opts.canGrantAssistant) {
+    ul.querySelectorAll('.btn-assistant-grant').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        const pid = btn.getAttribute('data-pid');
+        const isActive = btn.classList.contains('active');
+        socket.emit('grantAssistant', { playerId: isActive ? null : pid });
       });
     });
   }
@@ -872,6 +901,14 @@ function handleYourTurn(data) {
       const input = document.getElementById('player-word-input');
       if (input && !input.disabled) input.focus();
     }, 120);
+    if (assistantEnabled && roomState?.assistantPlayerId === myPlayerId) {
+      socket.emit('requestAssistant', {}, res => {
+        if (res?.success && res.word) {
+          const input = document.getElementById('player-word-input');
+          if (input) input.value = res.word;
+        }
+      });
+    }
   }
 }
 
@@ -1057,6 +1094,24 @@ function setupUIListeners() {
   document.getElementById('btn-leave-game').addEventListener('click', () => {
     if (!confirm('هل أنت متأكد أنك تريد مغادرة اللعبة؟')) return;
     socket.emit('leaveRoom', {}, () => resetClientState());
+  });
+
+  document.getElementById('btn-assistant-toggle').addEventListener('click', () => {
+    assistantEnabled = !assistantEnabled;
+    const toggleBtn = document.getElementById('btn-assistant-toggle');
+    const toggleText = document.getElementById('assistant-toggle-text');
+    toggleBtn.classList.toggle('active', assistantEnabled);
+    toggleText.textContent = assistantEnabled ? 'المساعد مفعّل' : 'تفعيل المساعد';
+    if (assistantEnabled && roomState?.assistantPlayerId === myPlayerId
+        && roomState?.game?.currentTurnPlayerId === myPlayerId
+        && roomState?.status === 'playing' && !roomState?.game?.pendingWord) {
+      socket.emit('requestAssistant', {}, res => {
+        if (res?.success && res.word) {
+          const input = document.getElementById('player-word-input');
+          if (input) input.value = res.word;
+        }
+      });
+    }
   });
 
   document.getElementById('btn-host-exit-lobby').addEventListener('click', () => {
