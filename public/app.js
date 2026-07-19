@@ -775,7 +775,8 @@ function renderPlayerList(listId, players, currentTurnId, selfId, opts = {}) {
     if (p.id === currentTurnId) tags.push({ text: 'دوره الآن', cls: 'tag-turn' });
     if (!p.connected && !p.eliminated) tags.push({ text: 'منقطع', cls: 'tag-dc' });
     if (p.eliminated)           tags.push({ text: p.eliminationReason || 'خرج', cls: 'tag-elim' });
-    if (p.id === opts.assistantPlayerId) tags.push({ text: 'مساعد', cls: 'tag-assistant' });
+    if (p.id === opts.assistantPlayerId && (opts.canGrantAssistant || p.id === selfId))
+      tags.push({ text: 'مساعد', cls: 'tag-assistant' });
 
     const kickable = opts.canKick && !p.eliminated;
     const kickBtn  = kickable
