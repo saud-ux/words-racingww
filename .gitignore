@@ -1,3 +1,17 @@
 node_modules/
 .claude/
 *.output
+
+# Mobile app
+mobile/node_modules/
+mobile/.expo/
+mobile/dist/
+mobile/ios/
+mobile/android/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+google-services.json
