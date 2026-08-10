@@ -1,11 +1,11 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
-import { colors, radius } from '../theme';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { colors, radius, shared } from '../theme';
 import { useGame } from '../GameProvider';
 import WordDisplay from '../components/WordDisplay';
 
 export default function EliminatedScreen() {
-  const { roomState, elimReason } = useGame();
+  const { roomState, elimReason, leaveRoom } = useGame();
   const game = roomState?.game;
 
   return (
@@ -27,6 +27,10 @@ export default function EliminatedScreen() {
         currentWord={game?.currentWord}
         requiredLetter={game?.requiredLetter}
       />
+
+      <TouchableOpacity style={styles.leaveBtn} onPress={leaveRoom}>
+        <Text style={styles.leaveBtnText}>مغادرة الغرفة</Text>
+      </TouchableOpacity>
     </ScrollView>
   );
 }
@@ -77,5 +81,16 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: colors.textMuted,
     textAlign: 'center',
+  },
+  leaveBtn: {
+    alignSelf: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+    marginTop: 8,
+  },
+  leaveBtnText: {
+    fontFamily: 'Tajawal_500Medium',
+    fontSize: 14,
+    color: colors.danger,
   },
 });

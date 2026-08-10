@@ -4,7 +4,7 @@ import { colors, radius, shared } from '../theme';
 import { useGame } from '../GameProvider';
 
 export default function WinnerScreen() {
-  const { roomState, role, setScreen, closeRoom } = useGame();
+  const { roomState, role, setScreen, closeRoom, leaveRoom } = useGame();
   const winner = roomState?.lastWinner;
   const isHost = role === 'host';
 
@@ -15,7 +15,7 @@ export default function WinnerScreen() {
         <Text style={styles.label}>الفائز</Text>
         <Text style={styles.name}>{winner?.name || 'لا يوجد فائز'}</Text>
 
-        {isHost && (
+        {isHost ? (
           <View style={styles.btns}>
             <TouchableOpacity
               style={[shared.btn, shared.btnPrimary, shared.btnLg, styles.newGameBtn]}
@@ -30,6 +30,15 @@ export default function WinnerScreen() {
               onPress={closeRoom}
             >
               <Text style={styles.exitBtnText}>إغلاق الغرفة</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          <View style={styles.btns}>
+            <TouchableOpacity
+              style={styles.exitBtn}
+              onPress={leaveRoom}
+            >
+              <Text style={styles.exitBtnText}>مغادرة الغرفة</Text>
             </TouchableOpacity>
           </View>
         )}

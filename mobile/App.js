@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect } from 'react';
-import { View, I18nManager, StyleSheet, Text } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import { View, I18nManager, StyleSheet, Text, TouchableOpacity, BackHandler } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import * as SplashScreen from 'expo-splash-screen';
@@ -22,6 +22,7 @@ import HostGameScreen from './src/screens/HostGameScreen';
 import PlayerGameScreen from './src/screens/PlayerGameScreen';
 import EliminatedScreen from './src/screens/EliminatedScreen';
 import WinnerScreen from './src/screens/WinnerScreen';
+import SettingsModal from './src/components/SettingsModal';
 
 if (!I18nManager.isRTL) {
   I18nManager.allowRTL(true);
@@ -32,6 +33,18 @@ SplashScreen.preventAutoHideAsync();
 
 function ScreenRouter() {
   const { screen, connected } = useGame();
+  const [settingsVisible, setSettingsVisible] = useState(false);
+
+  React.useEffect(() => {
+    const handler = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (settingsVisible) {
+        setSettingsVisible(false);
+        return true;
+      }
+      return false;
+    });
+    return () => handler.remove();
+  }, [settingsVisible]);
 
   const screens = {
     'landing': LandingScreen,
@@ -53,6 +66,19 @@ function ScreenRouter() {
         </View>
       )}
       <Screen />
+
+      <TouchableOpacity
+        style={styles.settingsBtn}
+        onPress={() => setSettingsVisible(true)}
+        accessibilityLabel="الإعدادات"
+      >
+        <Text style={styles.settingsIcon}>⚙️</Text>
+      </TouchableOpacity>
+
+      <SettingsModal
+        visible={settingsVisible}
+        onClose={() => setSettingsVisible(false)}
+      />
     </View>
   );
 }
@@ -108,5 +134,20 @@ const styles = StyleSheet.create({
     color: colors.danger,
     textAlign: 'center',
     writingDirection: 'rtl',
+  },
+  settingsBtn: {
+    position: 'absolute',
+    top: 8,
+    left: 12,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.surface + 'CC',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 50,
+  },
+  settingsIcon: {
+    fontSize: 20,
   },
 });

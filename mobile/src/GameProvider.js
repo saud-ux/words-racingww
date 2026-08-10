@@ -370,6 +370,26 @@ export function GameProvider({ children }) {
     });
   }, []);
 
+  const logout = useCallback(() => {
+    if (latest.role === 'host') {
+      socketRef.current?.emit('closeRoom', {}, () => {});
+    } else if (latest.role === 'player') {
+      socketRef.current?.emit('leaveRoom', {}, () => {});
+    }
+    resetAll();
+  }, []);
+
+  const deleteAllData = useCallback(async () => {
+    if (latest.role === 'host') {
+      socketRef.current?.emit('closeRoom', {}, () => {});
+    } else if (latest.role === 'player') {
+      socketRef.current?.emit('leaveRoom', {}, () => {});
+    }
+    try { await AsyncStorage.clear(); } catch (_) {}
+    setSoundEnabled(true);
+    resetAll();
+  }, []);
+
   const value = {
     screen, role, roomCode, playerId, playerName,
     roomState, isEliminated, elimReason,
@@ -381,6 +401,7 @@ export function GameProvider({ children }) {
     judgeDecision, hostDropPlayer, hostKickPlayer,
     setTimerMode, adjustTimer, pauseTimer, resumeTimer,
     endGame, leaveRoom, closeRoom, toggleSound, resetAll,
+    logout, deleteAllData,
     setShowEndGameModal, setShowKickModal, setPendingKickPlayer,
     setLandingError, setSubmitError, setFirstWordError,
     setScreen,
