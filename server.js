@@ -19,9 +19,17 @@ const MAX_TIMER_SECS = 60;
 
 const app    = express();
 const server = http.createServer(app);
-const io     = new Server(server);
+const io     = new Server(server, {
+  cors: { origin: '*', methods: ['GET', 'POST'] },
+});
 
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Dedicated entry links: one for the host, one for players. Both load the same
+// single-page app; the client reads the path and shows the matching view.
+app.get(['/host', '/player', '/join'], (_req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
 const rooms = new Map();
 
