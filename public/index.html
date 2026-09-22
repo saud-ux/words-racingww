@@ -13,23 +13,39 @@
 <div id="app">
 
   <div id="danger-vignette" aria-hidden="true"></div>
-  <button id="btn-sound-toggle" class="sound-toggle" title="كتم / تشغيل الصوت" aria-label="الصوت">🔊</button>
 
   <!-- LANDING -->
   <div id="screen-landing" class="screen">
     <div class="card center-card">
       <div class="game-logo">⚡</div>
       <h1 class="game-title">سباق الكلمات</h1>
-      <p class="game-subtitle">لعبة تسلسل الكلمات العربية — من الأسرع؟</p>
-      <button id="btn-create" class="btn btn-primary btn-lg">✦ إنشاء غرفة (هوست)</button>
-      <div class="divider"><span>أو</span></div>
-      <div class="join-form">
-        <input id="input-room-code" type="text" class="input input-code"
-               placeholder="رمز الغرفة" maxlength="4" autocomplete="off" spellcheck="false">
-        <input id="input-player-name" type="text" class="input"
-               placeholder="اسمك في اللعبة" maxlength="30" autocomplete="off">
-        <button id="btn-join" class="btn btn-secondary btn-lg">انضمام كلاعب</button>
+
+      <!-- CHOICE: pick host or player -->
+      <div id="landing-choice" class="landing-view">
+        <button id="btn-goto-host" class="btn btn-primary btn-lg">✦ إنشاء غرفة (هوست)</button>
+        <div class="divider"><span>أو</span></div>
+        <button id="btn-goto-join" class="btn btn-secondary btn-lg">🙋 انضمام كلاعب</button>
       </div>
+
+      <!-- HOST: create a room -->
+      <div id="landing-host" class="landing-view hidden">
+        <h2 class="landing-view-title">أنت الحكم / الهوست</h2>
+        <p class="landing-view-hint">أنشئ غرفة وشارك الرمز مع اللاعبين</p>
+        <button id="btn-create" class="btn btn-primary btn-lg">✦ إنشاء غرفة</button>
+      </div>
+
+      <!-- PLAYER: enter room code + name -->
+      <div id="landing-join" class="landing-view hidden">
+        <h2 class="landing-view-title">انضمام كلاعب</h2>
+        <div class="join-form">
+          <input id="input-room-code" type="text" class="input input-code"
+                 placeholder="رمز الغرفة" maxlength="4" autocomplete="off" spellcheck="false">
+          <input id="input-player-name" type="text" class="input"
+                 placeholder="اسمك في اللعبة" maxlength="30" autocomplete="off">
+          <button id="btn-join" class="btn btn-primary btn-lg">دخول الغرفة</button>
+        </div>
+      </div>
+
       <p id="landing-error" class="error-msg hidden"></p>
     </div>
   </div>
@@ -45,6 +61,16 @@
         <span class="room-code-label">رمز الغرفة</span>
         <span id="host-room-code" class="room-code">----</span>
         <p class="room-code-hint">شارك هذا الرمز مع اللاعبين</p>
+        <div class="invite-share">
+          <div class="invite-link-row">
+            <input id="host-invite-link" class="input invite-link-input" readonly onclick="this.select()">
+            <button id="btn-copy-invite" class="btn btn-secondary btn-sm" type="button">📋 نسخ</button>
+          </div>
+          <button id="btn-share-invite" class="btn btn-primary btn-sm invite-share-btn hidden" type="button">
+            📤 مشاركة الرابط
+          </button>
+          <p id="invite-copied-msg" class="invite-copied hidden">✓ تم النسخ</p>
+        </div>
       </div>
       <div class="player-section">
         <h3 class="section-title">اللاعبون المنضمون <span class="count-badge" id="host-lobby-count">0</span></h3>

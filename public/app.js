@@ -25,182 +25,11 @@ let lastSeenEventId = null;
 let lastPendingId   = null;
 let prevCurrentWord = null;
 let lastTimerSecond = -1;
+let lastTickAt      = 0;
 
-// ── Audio ─────────────────────────────────────────────────────────────────────
-const LS_SOUND = 'wr_sound';
-let audioCtx     = null;
-let soundEnabled = localStorage.getItem(LS_SOUND) !== 'off';
-let lastTickAt   = 0;
+// ── Haptics only (all sounds removed) ──
+function vibrate() {}
 
-function ensureAudio() {
-  if (!audioCtx) {
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return null;
-    try { audioCtx = new AC(); } catch (_) { return null; }
-  }
-  if (audioCtx.state === 'suspended') audioCtx.resume();
-  return audioCtx;
-}
-
-function unlockAudio() {
-  ensureAudio();
-  window.removeEventListener('pointerdown', unlockAudio);
-  window.removeEventListener('keydown', unlockAudio);
-}
-
-function vibrate(pattern) {
-  if (soundEnabled && navigator.vibrate) {
-    try { navigator.vibrate(pattern); } catch (_) {}
-  }
-}
-
-function tone(freq, {
-  type = 'sine', dur = 0.08, vol = 0.2,
-  attack = 0.005, decay = 0, sustain = 1,
-  release = 0.03, glideTo = null, when = 0,
-  filter = null, filterFreq = 2000, filterQ = 1,
-  distortion = false
-} = {}) {
-  if (!soundEnabled || !audioCtx) return;
-  const t0   = audioCtx.currentTime + when;
-  const osc  = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
-
-  osc.type = type;
-  osc.frequency.setValueAtTime(freq, t0);
-  if (glideTo) osc.frequency.exponentialRampToValueAtTime(glideTo, t0 + dur);
-
-  const peakTime     = t0 + attack;
-  const decayEnd     = peakTime + decay;
-  const sustainLevel = vol * sustain;
-  const releaseStart = t0 + dur;
-
-  gain.gain.setValueAtTime(0.0001, t0);
-  gain.gain.linearRampToValueAtTime(vol, peakTime);
-  if (decay > 0) gain.gain.linearRampToValueAtTime(sustainLevel, decayEnd);
-  gain.gain.setValueAtTime(sustainLevel, releaseStart);
-  gain.gain.exponentialRampToValueAtTime(0.0001, releaseStart + release);
-
-  if (filter) {
-    const bq = audioCtx.createBiquadFilter();
-    bq.type = filter;
-    bq.frequency.value = filterFreq;
-    bq.Q.value = filterQ;
-    osc.connect(bq);
-    bq.connect(gain);
-  } else {
-    osc.connect(gain);
-  }
-
-  gain.connect(audioCtx.destination);
-  osc.start(t0);
-  osc.stop(t0 + dur + release + 0.05);
-}
-
-function noise(dur = 0.05, vol = 0.15, when = 0, filterFreq = 800) {
-  if (!soundEnabled || !audioCtx) return;
-  const t0          = audioCtx.currentTime + when;
-  const bufSize     = audioCtx.sampleRate * dur;
-  const buf         = audioCtx.createBuffer(1, bufSize, audioCtx.sampleRate);
-  const data        = buf.getChannelData(0);
-  for (let i = 0; i < bufSize; i++) data[i] = Math.random() * 2 - 1;
-
-  const src   = audioCtx.createBufferSource();
-  const bq    = audioCtx.createBiquadFilter();
-  const gain  = audioCtx.createGain();
-
-  src.buffer = buf;
-  bq.type = 'bandpass';
-  bq.frequency.value = filterFreq;
-  bq.Q.value = 0.8;
-
-  gain.gain.setValueAtTime(vol, t0);
-  gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-
-  src.connect(bq);
-  bq.connect(gain);
-  gain.connect(audioCtx.destination);
-  src.start(t0);
-  src.stop(t0 + dur + 0.01);
-}
-
-// ═══════════════════════════════════════════════════════════
-// SOUND EFFECTS — minimal, non-intrusive
-// ═══════════════════════════════════════════════════════════
-
-// Submit — light tap
-function sfxSubmit() {
-  tone(900, { type: 'sine', dur: 0.05, vol: 0.12, attack: 0.002, release: 0.04 });
-}
-
-// Accept — two-note chime
-function sfxAccept() {
-  tone(523, { type: 'triangle', dur: 0.1,  vol: 0.16, attack: 0.004, release: 0.08, when: 0   });
-  tone(784, { type: 'triangle', dur: 0.16, vol: 0.18, attack: 0.004, release: 0.12, when: 0.1 });
-}
-
-// Reject — short low buzz
-function sfxReject() {
-  tone(180, { type: 'sawtooth', dur: 0.18, vol: 0.2, attack: 0.003, glideTo: 90, release: 0.08 });
-}
-
-// Your turn — two-ping
-function sfxYourTurn() {
-  tone(880,  { type: 'triangle', dur: 0.14, vol: 0.22, attack: 0.005, release: 0.12 });
-  tone(1320, { type: 'triangle', dur: 0.18, vol: 0.16, attack: 0.005, release: 0.14, when: 0.1 });
-}
-
-// Elim other — silent (too disruptive)
-function sfxElimOther() {}
-
-// Elim me — short impact
-function sfxElimMe() {
-  tone(160, { type: 'sawtooth', dur: 0.35, vol: 0.28, attack: 0.003, glideTo: 50, release: 0.15 });
-  noise(0.08, 0.18, 0, 250);
-}
-
-// Win
-function sfxWin(big) {
-  const base = [523.25, 659.25, 783.99];
-  base.forEach((f, i) => {
-    tone(f, { type: 'triangle', dur: 0.3, vol: big ? 0.24 : 0.16,
-              attack: 0.006, decay: 0.06, sustain: 0.7, release: 0.16, when: i * 0.1 });
-  });
-  if (big) tone(1046.5, { type: 'triangle', dur: 0.45, vol: 0.22, attack: 0.006, release: 0.2, when: 0.32 });
-}
-
-// Game start — short ascending sweep
-function sfxGameStart() {
-  tone(392,  { type: 'triangle', dur: 0.18, vol: 0.22, attack: 0.01, release: 0.12, when: 0.2  });
-  tone(523,  { type: 'triangle', dur: 0.22, vol: 0.24, attack: 0.01, release: 0.14, when: 0.38 });
-  tone(784,  { type: 'triangle', dur: 0.32, vol: 0.26, attack: 0.01, release: 0.18, when: 0.58 });
-}
-
-// Countdown blip — minimal
-function sfxCountdownBlip(step) {
-  const f = [660, 770, 880][step] || 660;
-  tone(f, { type: 'square', dur: 0.05, vol: 0.16, attack: 0.002, release: 0.04 });
-}
-
-// Pending — single bell
-function sfxPending() {
-  tone(1047, { type: 'sine', dur: 0.22, vol: 0.2, attack: 0.004, release: 0.2 });
-}
-
-// Tick — only fires when urgent (last 3s), very quiet
-function sfxTick(urgent, vol) {
-  if (urgent) tone(1100, { type: 'square', dur: 0.03, vol: vol * 0.6, attack: 0.001, release: 0.02 });
-}
-
-// Heartbeat — quieter
-function sfxHeartbeat(vol) {
-  tone(60, { type: 'sine', dur: 0.12, vol: vol * 0.45, attack: 0.008, glideTo: 50, release: 0.06 });
-}
-
-// Kick
-function sfxKick() {
-  tone(180, { type: 'sawtooth', dur: 0.16, vol: 0.2, attack: 0.003, glideTo: 50, release: 0.1 });
-}
 
 function flashDanger() {
   const v = document.getElementById('danger-vignette');
@@ -264,7 +93,6 @@ function updateTimerGlow(color) {
 }
 
 function showGameStartSplash() {
-  sfxGameStart();
   const overlay = document.getElementById('splash-overlay');
   if (!overlay) return;
   overlay.classList.remove('hidden');
@@ -273,7 +101,6 @@ function showGameStartSplash() {
   let i = 0;
   const tick = () => {
     if (i >= steps.length) { overlay.classList.add('hidden'); return; }
-    if (i < 3) sfxCountdownBlip(i);
     textEl.textContent = steps[i];
     textEl.classList.remove('anim-splash');
     void textEl.offsetWidth;
@@ -289,7 +116,7 @@ function spawnConfetti(count = 90) {
   container.className = 'confetti-container';
   document.body.appendChild(container);
   // Palette-harmonious confetti: olive, cream, cognac, warm gold, sage, terracotta
-  const colors = ['#978F66','#E4D6A9','#995F2F','#C4A060','#7a9a6a','#C4702A','#f0e0b8','#b8a87a'];
+  const colors = ['#14b8a6','#5eead4','#2dd4bf','#0d9488','#67e8f9','#99f6e4','#a7f3d0','#6ee7b7'];
   for (let i = 0; i < count; i++) {
     const p = document.createElement('div');
     p.className = 'confetti-particle';
@@ -331,18 +158,12 @@ function updateTension(game, rem) {
   if (!liveTurn) { clearTension(); return; }
 
   const isMyTurn  = myRole === 'player' && !isEliminated && game.currentTurnPlayerId === myPlayerId;
-  const intensity = isMyTurn ? 1 : 0.42;
   const now       = performance.now();
 
   if (rem <= 6) {
     if (now - lastTickAt >= tickIntervalMs(rem)) {
       lastTickAt = now;
-      if (rem <= 3) {
-        sfxHeartbeat(0.48 * intensity);
-        if (isMyTurn) vibrate(55);
-      } else {
-        sfxTick(rem <= 4.5, 0.1 * intensity);
-      }
+      if (rem <= 3 && isMyTurn) vibrate(55);
     }
   } else {
     lastTickAt = 0;
@@ -374,13 +195,72 @@ document.addEventListener('DOMContentLoaded', () => {
   socket = io();
   setupSocketListeners();
   setupUIListeners();
-  setupSoundToggle();
   setupFirstWordInput();
-  window.addEventListener('pointerdown', unlockAudio);
-  window.addEventListener('keydown', unlockAudio);
   startTimerLoop();
+  routeLanding();
   tryReconnect();
+
+  // Keep landing links working with browser back/forward
+  window.addEventListener('popstate', () => {
+    const landing = document.getElementById('screen-landing');
+    if (landing && !landing.classList.contains('hidden')) routeLanding();
+  });
 });
+
+// ── Landing routing: separate links for host (/host) and player (/player) ────
+const LANDING_VIEWS = ['choice', 'host', 'join'];
+
+function setLandingView(view) {
+  LANDING_VIEWS.forEach(v => {
+    document.getElementById('landing-' + v)?.classList.toggle('hidden', v !== view);
+  });
+  document.getElementById('landing-error')?.classList.add('hidden');
+}
+
+function showLandingChoice() { setLandingView('choice'); }
+function showLandingHost()   { setLandingView('host'); }
+function showLandingJoin() {
+  setLandingView('join');
+  setTimeout(() => document.getElementById('input-room-code')?.focus(), 50);
+}
+
+// Show the landing sub-view that matches the current URL (path + ?join=CODE)
+function routeLanding() {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const code   = (params.get('join') || '').trim().toUpperCase();
+
+    // An invite link (?join=CODE) is always a player action
+    if (code && /^[A-Z0-9]{4}$/.test(code)) {
+      const codeInput = document.getElementById('input-room-code');
+      const nameInput = document.getElementById('input-player-name');
+      if (codeInput) codeInput.value = code;
+      if (window.history?.replaceState) history.replaceState({}, '', '/player');
+      setLandingView('join');
+      setTimeout(() => nameInput?.focus(), 50);
+      return;
+    }
+
+    const path = (window.location.pathname || '/').toLowerCase();
+    if (path === '/host')                            showLandingHost();
+    else if (path === '/player' || path === '/join') showLandingJoin();
+    else                                             showLandingChoice();
+  } catch (_) {
+    showLandingChoice();
+  }
+}
+
+// Switch landing links (host/player/choice) without a full page reload
+function navLanding(path, view) {
+  if (window.history?.pushState) history.pushState({}, '', path);
+  setLandingView(view);
+  if (view === 'join') setTimeout(() => document.getElementById('input-room-code')?.focus(), 50);
+}
+
+// ── Build the player invite URL for a room ──────────────────────────────────
+function buildInviteUrl(code) {
+  return `${window.location.origin}/player?join=${encodeURIComponent(code)}`;
+}
 
 function setupFirstWordInput() {
   const input    = document.getElementById('input-first-word');
@@ -475,7 +355,6 @@ function handleRoomState(state) {
     const prevWord = prev.game?.currentWord;
     const newWord  = state.game?.currentWord;
     if (newWord && newWord !== prevWord && prevCurrentWord !== undefined) {
-      sfxAccept();
       requestAnimationFrame(() => {
         animateWordFlash(document.getElementById('player-current-word'));
         animateWordFlash(document.getElementById('host-current-word'));
@@ -491,7 +370,6 @@ function handleRoomState(state) {
     const newPend  = state.game?.pendingWord;
     if (newPend && newPend !== prevPend) {
       if (myRole === 'host') {
-        sfxPending();
         vibrate([80, 55, 80]);
         requestAnimationFrame(() => {
           const panel = document.getElementById('host-approval-panel');
@@ -553,6 +431,8 @@ function showScreen(name) {
     el.classList.toggle('hidden', s !== name);
     el.style.display = '';
   });
+  // Always land back on the host/player choice, not a half-filled join form
+  if (name === 'landing') showLandingChoice();
 }
 
 function renderHostLobby(state) {
@@ -844,8 +724,7 @@ function hidePausedOverlay() {
 
 function handlePlayerEliminated(data) {
   const isMe = data.playerId === myPlayerId;
-  if (isMe) { sfxElimMe(); vibrate([200, 80, 200, 80, 200]); flashDanger(); flashElimScreen(); }
-  else       { sfxElimOther(); }
+  if (isMe) { vibrate([200, 80, 200, 80, 200]); flashDanger(); flashElimScreen(); }
   clearTension();
   if (isMe) {
     isEliminated = true; myElimReason = data.reason;
@@ -856,7 +735,6 @@ function handlePlayerEliminated(data) {
 
 function handleGameEnded(data) {
   const iWon = data.winnerId && data.winnerId === myPlayerId;
-  sfxWin(iWon || myRole === 'host');
   if (iWon) vibrate([100, 50, 100, 50, 240]);
   clearTension();
   if (iWon || myRole === 'host') spawnConfetti(iWon ? 120 : 75);
@@ -866,7 +744,6 @@ function handleGameEnded(data) {
 
 function handleYourTurn(data) {
   if (data.playerId === myPlayerId) {
-    sfxYourTurn();
     vibrate([40, 40, 45]);
     setTimeout(() => {
       const input = document.getElementById('player-word-input');
@@ -880,7 +757,6 @@ function handlePendingApproval() {
 }
 
 function handleKickedFromRoom(data) {
-  sfxKick();
   vibrate([200, 80, 200]);
   alert(data?.reason || 'طردك الحكم من الغرفة');
   clearSession();
@@ -933,10 +809,10 @@ function updateTimers() {
 
   // ── Palette-matched timer colors ──────────────────────────────────────────
   // danger (cognac) → warning (warm gold) → mid (olive) → safe (sage)
-  const color = rem <= 2 ? '#C4702A'
-              : rem <= 4 ? '#C4A060'
-              : rem <= 7 ? '#978F66'
-              : '#7a9a6a';
+  const color = rem <= 2 ? '#f87171'
+              : rem <= 4 ? '#fbbf24'
+              : rem <= 7 ? '#2dd4bf'
+              : '#14b8a6';
 
   const offset = RING_C * (1 - pct);
 
@@ -979,8 +855,67 @@ function setupUIListeners() {
       document.getElementById('input-first-word').value          = '';
       document.getElementById('first-word-letter-preview').classList.add('hidden');
       document.getElementById('btn-start-game').disabled          = true;
+
+      // Populate invite link + reveal native Share button if supported
+      const inviteInput = document.getElementById('host-invite-link');
+      if (inviteInput) inviteInput.value = buildInviteUrl(res.code);
+      const shareBtn = document.getElementById('btn-share-invite');
+      if (shareBtn) shareBtn.classList.toggle('hidden', !navigator.share);
+      document.getElementById('invite-copied-msg')?.classList.add('hidden');
     });
   });
+
+  // Copy invite link to clipboard
+  document.getElementById('btn-copy-invite')?.addEventListener('click', async () => {
+    const inviteInput = document.getElementById('host-invite-link');
+    const msgEl       = document.getElementById('invite-copied-msg');
+    const url         = inviteInput?.value || '';
+    if (!url) return;
+
+    let ok = false;
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+        ok = true;
+      } else if (inviteInput) {
+        inviteInput.select();
+        ok = document.execCommand('copy');
+      }
+    } catch (_) { ok = false; }
+
+    if (ok && msgEl) {
+      msgEl.textContent = '✓ تم النسخ';
+      msgEl.classList.remove('hidden');
+      setTimeout(() => msgEl.classList.add('hidden'), 1800);
+    } else if (msgEl) {
+      msgEl.textContent = '✗ تعذّر النسخ — انسخ الرابط يدوياً';
+      msgEl.style.color = '#f87171';
+      msgEl.classList.remove('hidden');
+      setTimeout(() => {
+        msgEl.classList.add('hidden');
+        msgEl.style.color = '';
+      }, 2500);
+    }
+  });
+
+  // Native share (mobile — WhatsApp/Telegram/etc)
+  document.getElementById('btn-share-invite')?.addEventListener('click', async () => {
+    const url = document.getElementById('host-invite-link')?.value || '';
+    if (!url || !navigator.share) return;
+    try {
+      await navigator.share({
+        title: 'سباق الكلمات ⚡',
+        text: 'انضم إلى غرفتي في سباق الكلمات:',
+        url,
+      });
+    } catch (_) { /* user cancelled — ignore */ }
+  });
+
+  // Separate entry links: host (/host) and player (/player), plus back (/)
+  document.getElementById('btn-goto-host').addEventListener('click', () => navLanding('/host', 'host'));
+  document.getElementById('btn-goto-join').addEventListener('click', () => navLanding('/player', 'join'));
+  document.querySelectorAll('.btn-landing-back').forEach(b =>
+    b.addEventListener('click', () => navLanding('/', 'choice')));
 
   document.getElementById('btn-join').addEventListener('click', joinRoom);
   document.getElementById('input-room-code').addEventListener('keydown', e => {
@@ -1139,22 +1074,7 @@ function closeKickModal() {
   document.getElementById('kick-modal').classList.add('hidden');
 }
 
-function setupSoundToggle() {
-  const btn = document.getElementById('btn-sound-toggle');
-  if (!btn) return;
-  const render = () => {
-    btn.textContent = soundEnabled ? '🔊' : '🔇';
-    btn.classList.toggle('muted', !soundEnabled);
-  };
-  render();
-  btn.addEventListener('click', () => {
-    soundEnabled = !soundEnabled;
-    localStorage.setItem(LS_SOUND, soundEnabled ? 'on' : 'off');
-    render();
-    if (soundEnabled) { ensureAudio(); sfxYourTurn(); }
-    else { if (navigator.vibrate) navigator.vibrate(0); clearTension(); }
-  });
-}
+
 
 function joinRoom() {
   const code  = document.getElementById('input-room-code').value.trim().toUpperCase();
@@ -1190,7 +1110,6 @@ function submitWord() {
   errEl.classList.add('hidden');
   input.disabled = true;
   document.getElementById('btn-submit-word').disabled = true;
-  sfxSubmit();
 
   socket.emit('submitWord', { word }, res => {
     if (res && !res.success && !res.pending) {
